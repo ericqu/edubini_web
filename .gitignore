@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+results/
+*.egg-info
+*.mov
+*.mkv
+
+# Virtual environments
+.venv
+
+# Rust build output
+target/
+*.so
+
+# Local dev HTTPS certificate
+web/.cert/
+
+# Large result images at the top level (outputs, ~14 MB each)
+/*.png

@@ -1,0 +1,38 @@
+[project]
+name = "microscope-movie"
+version = "0.1.0"
+description = "Multi-frame super-resolution (Drizzle) for microscope videos"
+readme = "README.md"
+authors = [
+    { name = "Eric Quere", email = "13007637+ericqu@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.4",
+    "opencv-python>=5.0.0.93",
+    "pyobjc-framework-avfoundation>=13.0 ; sys_platform == 'darwin'",
+    "pyobjc-framework-libdispatch>=13.0 ; sys_platform == 'darwin'",
+]
+
+[project.scripts]
+microscope-movie = "microscope_movie:main"
+microscope-analyze = "microscope_movie.analysis:main"
+microscope-capture = "microscope_movie.capture:main"
+
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "src"
+module-name = "microscope_movie._drizzle"
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+# Rebuild the Rust extension when its sources change.
+cache-keys = [{ file = "pyproject.toml" }, { file = "Cargo.toml" }, { file = "rust/**/*.rs" }]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

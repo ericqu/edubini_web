@@ -1,0 +1,20 @@
+[package]
+name = "microscope_engine"
+version = "0.1.0"
+edition = "2021"
+description = "Super-resolution engine for the microscope web app (compiled to WebAssembly)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+rustfft = "6.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+
+[workspace]

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Microscope camera test</title>
+<style>
+  body { font: 15px -apple-system, system-ui, sans-serif; margin: 0; padding: 12px 16px; background: #111; color: #eee; }
+  h1 { font-size: 18px; margin: 0 0 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  button, select { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid #555; background: #2a2a2a; color: #eee; }
+  button:active { background: #444; }
+  video { width: 100%; max-height: 55vh; background: #000; border-radius: 8px; }
+  #status { font-weight: 600; margin: 8px 0; }
+  #log { font: 12px ui-monospace, Menlo, monospace; white-space: pre-wrap; background: #000; padding: 8px; border-radius: 8px; max-height: 30vh; overflow: auto; }
+  .ok { color: #6d6; } .bad { color: #f66; }
+</style>
+</head>
+<body>
+<h1>Microscope camera test</h1>
+<div class="row">
+  <button id="perm">1. Allow camera</button>
+  <select id="cam"><option>(allow camera first)</option></select>
+  <label><input type="checkbox" id="exact" checked> exact size</label>
+</div>
+<div class="row" id="modes">
+  <span>2. Start:</span>
+  <button data-w="1280" data-h="720">1280x720</button>
+  <button data-w="1280" data-h="960">1280x960</button>
+  <button data-w="1920" data-h="1080">1920x1080</button>
+  <button data-w="640" data-h="480">640x480</button>
+  <button data-w="0" data-h="0">browser default</button>
+  <button id="stop">Stop</button>
+</div>
+<div id="status"></div>
+<video id="v" playsinline muted autoplay></video>
+<div id="log"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const video = $("v"), sel = $("cam");
+let stream = null, frameTimer = null;
+
+function log(msg, cls) {
+  const line = document.createElement("div");
+  line.textContent = new Date().toLocaleTimeString() + "  " + msg;
+  if (cls) line.className = cls;
+  $("log").prepend(line);
+}
+function status(msg, cls) { $("status").textContent = msg; $("status").className = cls || ""; }
+
+function stop() {
+  if (frameTimer) clearTimeout(frameTimer);
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  video.srcObject = null;
+}
+
+async function listCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+  sel.innerHTML = "";
+  for (const d of devs) {
+    const o = document.createElement("option");
+    o.value = d.deviceId;
+    o.textContent = d.label || d.deviceId.slice(0, 8);
+    sel.appendChild(o);
+  }
+  // Preselect anything that is not a built-in camera.
+  const ext = devs.find((d) => !/front|back|facetime|face time|ultra|wide|tele/i.test(d.label));
+  if (ext) sel.value = ext.deviceId;
+  log("cameras: " + devs.map((d) => d.label || "?").join(" | "));
+}
+
+$("perm").onclick = async () => {
+  try {
+    if (!window.isSecureContext) log("page is not a secure context (needs https)", "bad");
+    const s = await navigator.mediaDevices.getUserMedia({ video: true });
+    s.getTracks().forEach((t) => t.stop());
+    await listCameras();
+    status("Camera allowed. Pick the microscope, then a mode.", "ok");
+  } catch (e) {
+    status("Permission failed: " + e.name, "bad");
+    log(e.name + ": " + e.message, "bad");
+  }
+};
+
+async function start(w, h) {
+  stop();
+  const exact = $("exact").checked;
+  const v = { deviceId: { exact: sel.value } };
+  if (w) {
+    v.width = exact ? { exact: w } : { ideal: w };
+    v.height = exact ? { exact: h } : { ideal: h };
+  }
+  const label = w ? `${w}x${h}${exact ? " exact" : " ideal"}` : "default";
+  status("Starting " + label + "...");
+  log("request " + label + " on " + (sel.selectedOptions[0]?.textContent || "?"));
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: v });
+  } catch (e) {
+    status("getUserMedia failed: " + e.name, "bad");
+    log(e.name + ": " + e.message + (e.constraint ? " (constraint: " + e.constraint + ")" : ""), "bad");
+    return;
+  }
+  const track = stream.getVideoTracks()[0];
+  log("settings: " + JSON.stringify(track.getSettings()));
+  if (track.getCapabilities) {
+    const c = track.getCapabilities();
+    log("capabilities: width " + JSON.stringify(c.width) + " height " + JSON.stringify(c.height) + " fps " + JSON.stringify(c.frameRate));
+  }
+  track.onended = () => log("track ended", "bad");
+  track.onmute = () => log("track muted (no frames)", "bad");
+  track.onunmute = () => log("track unmuted");
+  video.srcObject = stream;
+  try { await video.play(); } catch (e) { log("play(): " + e.name + ": " + e.message, "bad"); }
+
+  // Count real frames for a few seconds.
+  let n = 0, t0 = null, tLast = null;
+  const mine = stream;
+  const onFrame = (now) => {
+    if (stream !== mine) return;
+    n++;
+    if (t0 === null) t0 = now;
+    tLast = now;
+    video.requestVideoFrameCallback(onFrame);
+  };
+  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame);
+  frameTimer = setTimeout(function report() {
+    if (stream !== mine) return;
+    if (n === 0) {
+      status(`${label}: NO FRAMES after 4 s`, "bad");
+      log("no frames received", "bad");
+      return;
+    }
+    const fps = n > 1 ? ((n - 1) / ((tLast - t0) / 1000)).toFixed(1) : "?";
+    status(`${label}: OK, receiving ${video.videoWidth}x${video.videoHeight} at ${fps} fps`, "ok");
+    log(`frames: ${n}, ${video.videoWidth}x${video.videoHeight}, ${fps} fps`, "ok");
+    n = 0; t0 = null;
+    frameTimer = setTimeout(report, 4000);
+  }, 4000);
+}
+
+for (const b of document.querySelectorAll("#modes button[data-w]")) {
+  b.onclick = () => start(+b.dataset.w, +b.dataset.h);
+}
+$("stop").onclick = () => { stop(); status("Stopped."); };
+navigator.mediaDevices?.addEventListener?.("devicechange", () => { log("device change"); listCameras(); });
+</script>
+</body>
+</html>

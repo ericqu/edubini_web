@@ -1,0 +1,18 @@
+[package]
+name = "microscope_movie_drizzle"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_drizzle"
+crate-type = ["cdylib"]
+path = "rust/lib.rs"
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["abi3-py312"] }
+numpy = "0.29"
+rayon = "1.10"
+
+[profile.release]
+lto = true
+codegen-units = 1
